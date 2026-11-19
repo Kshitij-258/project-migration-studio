@@ -30,3 +30,4 @@ use the editor.
 <!-- LOVABLE:END -->
 
 - Keep all student-record access scoped by authenticated user identity in database row policies, because predictions may contain sensitive educational information.
+- Preserve the source app’s sidebar-section navigation as views within the single root page, because the source shipped six screens in one Streamlit workspace.

@@ -2,14 +2,68 @@
   "source": "code-archive",
   "archive": "edutrack-ai.zip",
   "capabilities": [
-    {"capability":"application code and routes","source":"Streamlit app.py with six navigation sections","outcome":"recreated as one Lovable web page with Overview, Predict, Batch, Saved, Model notes, and About sections","status":"verified","next_action":"none"},
-    {"capability":"prediction models and synthetic training data","source":"generate_dataset.py and train_model.py; trained model artifacts, dataset CSV, and metrics report absent","outcome":"recreated source formula, risk tiers, recommendations, explanations, what-if view, and generated demonstration cohort; original Random Forest outputs not reproducible","status":"blocked","next_action":"attach models/student_models.joblib, models/metrics.json, and dataset/students.csv if exact original model behavior is required"},
-    {"capability":"application database schema","source":"local SQLite student_records table","outcome":"migrated to private Lovable Cloud saved_predictions table","status":"verified","next_action":"none"},
-    {"capability":"records","source":"no SQLite database or record export in archive","outcome":"existing saved predictions pending","status":"pending","next_action":"attach a CSV or JSON export of student_records, or reply Skip for now"},
-    {"capability":"auth identities and authorization","source":"no source auth or role system detected","outcome":"added email account access so saved predictions remain private to each signed-in teacher","status":"verified","next_action":"none"},
-    {"capability":"uploaded file bytes","source":"temporary browser CSV upload only","outcome":"recreated temporary CSV validation, scoring, and download","status":"verified","next_action":"none"},
-    {"capability":"external providers, public endpoints, callbacks, webhooks, schedules, secrets","source":"none detected","outcome":"none present in source","status":"not_applicable","next_action":"none"},
-    {"capability":"cutover","source":"source prototype ran locally in Streamlit","outcome":"Lovable preview ready; publication not performed","status":"pending","next_action":"publish when ready"},
-    {"capability":"verification","source":"preview checks","outcome":"build, tests, dashboard, prediction, batch upload, signed-out gate, and signed-in save/delete verified","status":"verified","next_action":"none"}
+    {
+      "capability": "application code and routes",
+      "source": "Streamlit app.py with six navigation sections",
+      "outcome": "recreated as one Lovable web page with Overview, Predict, Batch, Saved, Model notes, and About sections",
+      "status": "verified",
+      "next_action": "none"
+    },
+    {
+      "capability": "prediction models and synthetic training data",
+      "source": "generate_dataset.py and train_model.py; trained model artifacts, dataset CSV, and metrics report absent",
+      "outcome": "recreated source formula, risk tiers, recommendations, explanations, what-if view, and generated demonstration cohort; original Random Forest outputs not reproducible",
+      "status": "blocked",
+      "next_action": "attach models/student_models.joblib, models/metrics.json, and dataset/students.csv if exact original model behavior is required"
+    },
+    {
+      "capability": "application database schema",
+      "source": "local SQLite student_records table",
+      "outcome": "migrated to private Lovable Cloud saved_predictions table",
+      "status": "verified",
+      "next_action": "none"
+    },
+    {
+      "capability": "records",
+      "source": "no SQLite database or record export in archive",
+      "outcome": "existing saved predictions pending",
+      "status": "pending",
+      "next_action": "attach CSV export from original Saved Predictions or reply Skip for now"
+    },
+    {
+      "capability": "auth identities and authorization",
+      "source": "no source auth or role system detected",
+      "outcome": "added email account access so saved predictions remain private to each signed-in teacher",
+      "status": "verified",
+      "next_action": "none"
+    },
+    {
+      "capability": "uploaded file bytes",
+      "source": "temporary browser CSV upload only",
+      "outcome": "recreated temporary CSV validation, scoring, and download",
+      "status": "verified",
+      "next_action": "none"
+    },
+    {
+      "capability": "external providers, public endpoints, callbacks, webhooks, schedules, secrets",
+      "source": "none detected",
+      "outcome": "none present in source",
+      "status": "not_applicable",
+      "next_action": "none"
+    },
+    {
+      "capability": "cutover",
+      "source": "source prototype ran locally in Streamlit",
+      "outcome": "Lovable preview ready; publication not performed",
+      "status": "pending",
+      "next_action": "publish when ready"
+    },
+    {
+      "capability": "verification",
+      "source": "preview checks",
+      "outcome": "build, tests, dashboard, prediction, batch upload, signed-out gate, and signed-in save/delete verified",
+      "status": "verified",
+      "next_action": "none"
+    }
   ]
 }
