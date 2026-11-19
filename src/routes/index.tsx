@@ -50,6 +50,10 @@ function downloadFile(filename: string, text: string) {
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+function getAccountDisplayName(user: { user_metadata?: Record<string, unknown> } | null | undefined) {
+  const name = user?.user_metadata?.["display_name"];
+  return typeof name === "string" ? name.trim() : "";
+}
 
 function EduTrackApp() {
   const [view, setView] = useState<View>("Overview");
@@ -67,22 +71,30 @@ function EduTrackApp() {
   const [sampleSearch, setSampleSearch] = useState("");
   const [factor, setFactor] = useState<FeatureId>("attendance");
   const [authReady, setAuthReady] = useState(false);
-  const [account, setAccount] = useState<{ id: string; email: string | undefined } | null>(null);
+  const [account, setAccount] = useState<{ id: string; email: string | undefined; displayName: string } | null>(null);
+  const [profileDisplayName, setProfileDisplayName] = useState("");
   const [saved, setSaved] = useState<SavedPrediction[]>([]);
   const [authMode, setAuthMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authDisplayName, setAuthDisplayName] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
     void supabase.auth.getUser().then(({ data }) => {
-      if (active) { setAccount(data.user ? { id: data.user.id, email: data.user.email } : null); setAuthReady(true); }
+      if (active) {
+        setAccount(data.user ? { id: data.user.id, email: data.user.email, displayName: getAccountDisplayName(data.user) } : null);
+        setProfileDisplayName(getAccountDisplayName(data.user));
+        setAuthReady(true);
+      }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
-      setAccount(session?.user ? { id: session.user.id, email: session.user.email } : null); setAuthReady(true);
+      setAccount(session?.user ? { id: session.user.id, email: session.user.email, displayName: getAccountDisplayName(session.user) } : null);
+      setProfileDisplayName(getAccountDisplayName(session?.user));
+      setAuthReady(true);
     });
     return () => { active = false; listener.subscription.unsubscribe(); };
   }, []);
@@ -123,7 +135,7 @@ function EduTrackApp() {
     setBusy(true); setAuthMessage("");
     try {
       if (authMode === "sign-up") {
-        const { data, error } = await supabase.auth.signUp({ email: authEmail.trim(), password: authPassword, options: { emailRedirectTo: window.location.origin } });
+        const { data, error } = await supabase.auth.signUp({ email: authEmail.trim(), password: authPassword, options: { emailRedirectTo: window.location.origin, data: { display_name: authDisplayName.trim() } } });
         if (error) throw error;
         setAuthMessage(data.session ? "Your account is ready." : "Account created. Check your email to confirm, then sign in.");
       } else {
@@ -132,6 +144,19 @@ function EduTrackApp() {
         setAuthMessage("Signed in. Your records are private to this account.");
       }
     } catch (error) { setAuthMessage(error instanceof Error ? error.message : "Could not complete that request."); }
+    finally { setBusy(false); }
+  };
+  const handleUpdateProfile = async () => {
+    const displayName = profileDisplayName.trim();
+    if (!displayName || !account) return;
+    setBusy(true); setAuthMessage("");
+    try {
+      const { data, error } = await supabase.auth.updateUser({ data: { display_name: displayName } });
+      if (error) throw error;
+      if (data.user) setAccount({ id: data.user.id, email: data.user.email, displayName: getAccountDisplayName(data.user) });
+      setProfileDisplayName(displayName);
+      setAuthMessage("Display name updated.");
+    } catch (error) { setAuthMessage(error instanceof Error ? error.message : "Could not update the display name."); }
     finally { setBusy(false); }
   };
   const handleSignOut = async () => { await supabase.auth.signOut(); setSaved([]); setAuthMessage("Signed out."); };
@@ -160,13 +185,13 @@ function EduTrackApp() {
     </aside>
     <main className="main-shell">
       <header className="topbar"><Button variant="ghost" size="icon" className="mobile-menu" aria-label="Open menu" onClick={() => setMenuOpen(true)}><Menu /></Button><div className="breadcrumb"><span>EduTrack</span><ChevronDown aria-hidden="true" /><strong>{view}</strong></div>
-        <div className="topbar-right">{account ? <><span className="account-email">{account.email}</span><Button variant="outline" size="sm" onClick={handleSignOut}>Sign out</Button></> : <span className="demo-indicator"><span className="status-dot" />{authReady ? "SIGNED OUT" : "CONNECTING"}</span>}<div className="avatar-mark">{account?.email?.slice(0, 2).toUpperCase() ?? "ET"}</div></div>
+        <div className="topbar-right">{account ? <><span className="account-email">{account.displayName || account.email}</span><Button variant="outline" size="sm" onClick={handleSignOut}>Sign out</Button></> : <span className="demo-indicator"><span className="status-dot" />{authReady ? "SIGNED OUT" : "CONNECTING"}</span>}<div className="avatar-mark">{(account?.displayName || account?.email)?.slice(0, 2).toUpperCase() ?? "ET"}</div></div>
       </header>
       <div className="page-content">
         {view === "Overview" && <OverviewPage stats={cohortStats} factor={factor} setFactor={setFactor} samples={filteredSamples} search={sampleSearch} setSearch={setSampleSearch} onDownload={() => downloadFile("edutrack_synthetic_sample.csv", sampleDatasetToCsv(demoCohort))} onPredict={() => navigate("Predict a student")} />}
         {view === "Predict a student" && <PredictPage studentId={studentId} setStudentId={setStudentId} student={student} onFeatureChange={changeFeature} preset={preset} onPreset={choosePreset} onPredict={runPrediction} result={latest} whatIf={whatIf} setWhatIf={setWhatIf} resultTab={resultTab} setResultTab={setResultTab} onSave={handleSavePrediction} busy={busy} />}
         {view === "Batch prediction" && <BatchPage rows={batchRows} issues={batchIssues} uploadName={uploadName} onUpload={onUpload} onDownload={() => downloadFile("edutrack_batch_predictions.csv", predictionsToCsv(batchRows))} />}
-        {view === "Saved predictions" && <SavedPage rows={visibleSaved} filter={filter} setFilter={setFilter} account={account} authMode={authMode} setAuthMode={setAuthMode} email={authEmail} setEmail={setAuthEmail} password={authPassword} setPassword={setAuthPassword} authMessage={authMessage} onAuth={handleAuth} onDelete={handleDeletePrediction} busy={busy} />}
+        {view === "Saved predictions" && <SavedPage rows={visibleSaved} filter={filter} setFilter={setFilter} account={account} profileDisplayName={profileDisplayName} setProfileDisplayName={setProfileDisplayName} onUpdateProfile={handleUpdateProfile} authMode={authMode} setAuthMode={setAuthMode} email={authEmail} setEmail={setAuthEmail} password={authPassword} setPassword={setAuthPassword} displayName={authDisplayName} setDisplayName={setAuthDisplayName} authMessage={authMessage} onAuth={handleAuth} onDelete={handleDeletePrediction} busy={busy} />}
         {view === "Model notes" && <ModelPage />}{view === "About" && <AboutPage />}
       </div>
     </main>
@@ -231,8 +256,8 @@ function BatchPage({ rows, issues, uploadName, onUpload, onDownload }: { rows: A
   const headers = ["student_id", ...featureSpecs.map((field) => field.id)].join(","), templateRows = demoCohort.slice(0, 3).map((row) => [row.student_id, ...featureSpecs.map((field) => row[field.id])].join(","));
   return <><PageHeading kicker="CLASS REVIEW" title="Batch prediction." description="Upload a class CSV, check its columns, and export a scored working copy." action={<Button variant="outline" onClick={() => downloadFile("edutrack_template.csv", [headers, ...templateRows].join("\n"))}><Download /> Download template</Button>} /><div className="notice-band notice-amber"><Info /><span><strong>Use a pseudonymous CSV.</strong> Files are read in this browser and are not stored. Up to 5,000 rows are processed.</span><Badge variant="outline">PRIVATE</Badge></div><div className="batch-layout"><section className="upload-panel"><div className="upload-mark"><FileUp /></div><span className="panel-kicker">CLASS CSV</span><h2>Bring in a student list.</h2><p>Required headers: <code>{featureSpecs.map((field) => field.id).join(", ")}</code>. Student ID is optional.</p><label className="upload-button"><input aria-label="Upload student CSV" type="file" accept=".csv,text/csv" onChange={onUpload} /><FileUp /> Choose CSV</label>{uploadName && <p className="file-name"><ClipboardList />{uploadName}</p>}<p className="fine-print">Upload is temporary and stays in this browser session.</p></section><section className="batch-summary"><div className="panel-heading"><div><span className="panel-kicker">BATCH SUMMARY</span><h2>{rows.length ? `${rows.length} students scored` : "Waiting for a file"}</h2></div><span className="quiet-icon"><Users /></span></div><div className="batch-stats"><div><span>Average estimate</span><strong>{rows.length ? average.toFixed(1) : "—"}<small>{rows.length ? "/100" : ""}</small></strong></div><div><span>Needs support</span><strong>{rows.length ? counts["Needs support"] ?? 0 : "—"}</strong></div><div><span>Keep an eye on</span><strong>{rows.length ? counts["Keep an eye on"] ?? 0 : "—"}</strong></div></div>{rows.length > 0 && <Button onClick={onDownload}><Download /> Download results CSV</Button>}</section></div>{issues.map((issue) => <div className="inline-alert" key={issue}><Info />{issue}</div>)}{rows.length ? <section className="records-section batch-results"><div className="section-heading"><div><span className="panel-kicker">SORTED BY RISK</span><h2>Batch results</h2></div><span className="fine-print">Highest risk first</span></div><StudentTable rows={[...rows].sort((a, b) => b.prediction.risk_probability - a.prediction.risk_probability).slice(0, 25).map((row) => ({ id: row.student_id, score: row.prediction.predicted_score, attendance: row.student.attendance, risk: row.prediction.risk_level }))} /></section> : <div className="csv-columns"><h3>Template columns</h3><div>{featureSpecs.map((field) => <span key={field.id}>{field.id}</span>)}</div></div>}</>;
 }
-function SavedPage({ rows, filter, setFilter, account, authMode, setAuthMode, email, setEmail, password, setPassword, authMessage, onAuth, onDelete, busy }: { rows: SavedPrediction[]; filter: string; setFilter: (value: string) => void; account: { id: string; email: string | undefined } | null; authMode: "sign-in" | "sign-up"; setAuthMode: (mode: "sign-in" | "sign-up") => void; email: string; setEmail: (value: string) => void; password: string; setPassword: (value: string) => void; authMessage: string; onAuth: () => void; onDelete: (id: string) => void; busy: boolean }) {
-  return <><PageHeading kicker="PRIVATE TEACHER WORKSPACE" title="Saved predictions." description="Records belong to the signed-in teacher and are not shared with other accounts." /><div className="notice-band notice-amber"><LockKeyhole /><span><strong>Private records need an account.</strong> No records from the original local database were supplied.</span><Badge variant="outline">CLOUD STORAGE</Badge></div>{!account ? <div className="auth-layout"><section className="auth-panel"><span className="panel-kicker">TEACHER ACCOUNT</span><h2>{authMode === "sign-in" ? "Welcome back." : "Create your account."}</h2><p>Saved student predictions are private to the account that created them.</p><label className="field-label" htmlFor="teacher-email">Email</label><Input id="teacher-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /><label className="field-label password-label" htmlFor="teacher-password">Password</label><Input id="teacher-password" type="password" autoComplete={authMode === "sign-in" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={busy || !email || password.length < 6} onClick={onAuth}>{busy ? "Please wait…" : authMode === "sign-in" ? "Sign in" : "Create account"}</Button>{authMessage && <p className="auth-message">{authMessage}</p>}<button className="auth-switch" type="button" onClick={() => { setAuthMode(authMode === "sign-in" ? "sign-up" : "sign-in"); }}>{authMode === "sign-in" ? "Need an account? Create one" : "Already registered? Sign in"}</button><p className="auth-foot"><LockKeyhole /> Student records are protected and account-scoped.</p></section><section className="auth-aside"><div className="empty-result-mark"><ShieldCheck /></div><h3>Private by default.</h3><p>Each teacher sees only the predictions they have saved. Use pseudonyms, and keep real student names out of this prototype.</p></section></div> : <><div className="saved-tools"><label className="search-box"><Search /><Input placeholder="Filter by student ID" aria-label="Filter saved predictions" value={filter} onChange={(event) => setFilter(event.target.value)} /></label><span><LockKeyhole /> Account-only access</span></div>{authMessage && <div className="inline-alert"><Info />{authMessage}</div>}{rows.length ? <StudentTable rows={rows.map((row) => ({ id: row.student_id, score: row.predicted_score, attendance: row.attendance, risk: row.risk_probability >= 0.5 ? "Needs support" : row.risk_probability >= 0.25 ? "Keep an eye on" : "On track" }))} /> : <section className="empty-saved"><div className="empty-result-mark"><LockKeyhole /></div><h2>Your records, not the classroom's.</h2><p>No saved predictions yet. Run a student estimate and choose Save prediction to keep it here.</p><small>Only your signed-in account can read or remove these records.</small></section>}{rows.length > 0 && <div className="saved-delete-list">{rows.map((row) => <div key={row.id}><span>{row.student_id} · {new Date(row.created_at).toLocaleDateString()}</span><Button variant="ghost" size="icon" aria-label={`Delete ${row.student_id}`} title={`Delete ${row.student_id}`} onClick={() => onDelete(row.id)}><Trash2 /></Button></div>)}</div>}</>}</>;
+function SavedPage({ rows, filter, setFilter, account, profileDisplayName, setProfileDisplayName, onUpdateProfile, authMode, setAuthMode, email, setEmail, password, setPassword, displayName, setDisplayName, authMessage, onAuth, onDelete, busy }: { rows: SavedPrediction[]; filter: string; setFilter: (value: string) => void; account: { id: string; email: string | undefined; displayName: string } | null; profileDisplayName: string; setProfileDisplayName: (value: string) => void; onUpdateProfile: () => void; authMode: "sign-in" | "sign-up"; setAuthMode: (mode: "sign-in" | "sign-up") => void; email: string; setEmail: (value: string) => void; password: string; setPassword: (value: string) => void; displayName: string; setDisplayName: (value: string) => void; authMessage: string; onAuth: () => void; onDelete: (id: string) => void; busy: boolean }) {
+  return <><PageHeading kicker="PRIVATE TEACHER WORKSPACE" title="Saved predictions." description="Records belong to the signed-in teacher and are not shared with other accounts." /><div className="notice-band notice-amber"><LockKeyhole /><span><strong>Private records need an account.</strong> No records from the original local database were supplied.</span><Badge variant="outline">CLOUD STORAGE</Badge></div>{!account ? <div className="auth-layout"><section className="auth-panel"><span className="panel-kicker">TEACHER ACCOUNT</span><h2>{authMode === "sign-in" ? "Welcome back." : "Create your account."}</h2><p>Saved student predictions are private to the account that created them.</p>{authMode === "sign-up" && <><label className="field-label" htmlFor="teacher-display-name">Display name</label><Input id="teacher-display-name" autoComplete="name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></>}<label className="field-label" htmlFor="teacher-email">Email</label><Input id="teacher-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /><label className="field-label password-label" htmlFor="teacher-password">Password</label><Input id="teacher-password" type="password" autoComplete={authMode === "sign-in" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} /><Button disabled={busy || !email || password.length < 6 || (authMode === "sign-up" && !displayName.trim())} onClick={onAuth}>{busy ? "Please wait…" : authMode === "sign-in" ? "Sign in" : "Create account"}</Button>{authMessage && <p className="auth-message">{authMessage}</p>}<button className="auth-switch" type="button" onClick={() => { setAuthMode(authMode === "sign-in" ? "sign-up" : "sign-in"); }}>{authMode === "sign-in" ? "Need an account? Create one" : "Already registered? Sign in"}</button><p className="auth-foot"><LockKeyhole /> Student records are protected and account-scoped.</p></section><section className="auth-aside"><div className="empty-result-mark"><ShieldCheck /></div><h3>Private by default.</h3><p>Each teacher sees only the predictions they have saved. Use pseudonyms, and keep real student names out of this prototype.</p></section></div> : <><section className="profile-panel"><div><span className="panel-kicker">TEACHER PROFILE</span><h2>Account details</h2><p>{account.email}</p></div><div className="profile-edit"><label className="field-label" htmlFor="profile-display-name">Display name</label><Input id="profile-display-name" autoComplete="name" value={profileDisplayName} onChange={(event) => setProfileDisplayName(event.target.value)} /><Button disabled={busy || !profileDisplayName.trim() || profileDisplayName.trim() === account.displayName} onClick={onUpdateProfile}>Save name</Button></div></section><div className="saved-tools"><label className="search-box"><Search /><Input placeholder="Filter by student ID" aria-label="Filter saved predictions" value={filter} onChange={(event) => setFilter(event.target.value)} /></label><span><LockKeyhole /> Account-only access</span></div>{authMessage && <div className="inline-alert"><Info />{authMessage}</div>}{rows.length ? <StudentTable rows={rows.map((row) => ({ id: row.student_id, score: row.predicted_score, attendance: row.attendance, risk: row.risk_probability >= 0.5 ? "Needs support" : row.risk_probability >= 0.25 ? "Keep an eye on" : "On track" }))} /> : <section className="empty-saved"><div className="empty-result-mark"><LockKeyhole /></div><h2>Your records, not the classroom's.</h2><p>No saved predictions yet. Run a student estimate and choose Save prediction to keep it here.</p><small>Only your signed-in account can read or remove these records.</small></section>}{rows.length > 0 && <div className="saved-delete-list">{rows.map((row) => <div key={row.id}><span>{row.student_id} · {new Date(row.created_at).toLocaleDateString()}</span><Button variant="ghost" size="icon" aria-label={`Delete ${row.student_id}`} title={`Delete ${row.student_id}`} onClick={() => onDelete(row.id)}><Trash2 /></Button></div>)}</div>}</>}</>;
 }
 function ModelPage() {
   const absent = ["Trained Random Forest model files", "The original generated cohort CSV", "The test-set evaluation report"];
