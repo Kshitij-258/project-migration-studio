@@ -1,0 +1,15 @@
+{
+  "source": "code-archive",
+  "archive": "edutrack-ai.zip",
+  "capabilities": [
+    {"capability":"application code and routes","source":"Streamlit app.py with six navigation sections","outcome":"recreate in Lovable web app","status":"in_progress","next_action":"implement Dashboard, Predict, Batch, Saved, Model Performance, About"},
+    {"capability":"prediction models and synthetic training data","source":"generate_dataset.py and train_model.py; model artifacts and dataset absent","outcome":"recreate model behavior with clearly labeled synthetic demo data","status":"in_progress","next_action":"build student predictor, explanations, what-if, and performance views"},
+    {"capability":"application database","source":"local SQLite student_records table","outcome":"migrate saved-prediction storage to Lovable Cloud","status":"pending","next_action":"enable Cloud, create schema, and connect saved-record UI"},
+    {"capability":"records","source":"no SQLite database or record export in archive","outcome":"pending source records","status":"pending","next_action":"request sanitized CSV/JSON export from SQLite after preview"},
+    {"capability":"auth identities and authorization","source":"no auth or role system detected","outcome":"none present in source","status":"not_applicable","next_action":"none"},
+    {"capability":"uploaded file bytes","source":"browser CSV upload only; no persistent file storage","outcome":"recreate transient CSV upload","status":"in_progress","next_action":"implement batch upload"},
+    {"capability":"external providers, public endpoints, callbacks, webhooks, schedules, secrets","source":"none detected","outcome":"none present in source","status":"not_applicable","next_action":"none"},
+    {"capability":"cutover","source":"source prototype runs locally in Streamlit","outcome":"pending","status":"pending","next_action":"verify preview and give deployment handoff"},
+    {"capability":"verification","source":"not yet tested in Lovable preview","outcome":"pending","status":"pending","next_action":"verify prediction, batch scoring, saved-record CRUD, and page navigation"}
+  ]
+}
