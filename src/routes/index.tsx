@@ -42,7 +42,13 @@ const riskClass: Record<string, string> = { "On track": "risk-track", "Keep an e
 const fieldTitle: Record<string, string> = Object.fromEntries(featureSpecs.map((field) => [field.id, field.label]));
 function downloadFile(filename: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function EduTrackApp() {
