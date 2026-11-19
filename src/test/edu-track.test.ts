@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateStudent, parseStudentCsv, presets, riskLevel } from "@/lib/edu-track";
+import { demoCohort, estimateStudent, parseStudentCsv, presets, riskLevel, sampleDatasetToCsv } from "@/lib/edu-track";
 
 describe("EduTrack model rules", () => {
   it("keeps the source risk tier boundaries", () => {
@@ -18,5 +18,9 @@ describe("EduTrack model rules", () => {
     const result = parseStudentCsv("attendance,study_hours\n80,3");
     expect(result.errors[0]).toContain("Missing required columns");
     expect(result.rows).toHaveLength(0);
+  });
+  it("keeps original dataset columns in the sample export", () => {
+    const [header] = sampleDatasetToCsv(demoCohort.slice(0, 1)).split("\n");
+    expect(header).toBe("student_id,attendance,study_hours,assignment_completion,previous_score,internal_marks,absences,mathematics,programming,electronics,final_score,academic_risk");
   });
 });

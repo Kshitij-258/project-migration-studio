@@ -147,3 +147,14 @@ export function predictionsToCsv(rows: { student_id: string; student: Student; p
   const body = rows.map(({ student_id, student, prediction }) => [student_id, ...featureSpecs.map((field) => student[field.id]), prediction.predicted_score.toFixed(1), prediction.score_low.toFixed(1), prediction.score_high.toFixed(1), prediction.risk_probability.toFixed(3), prediction.risk_level].join(","));
   return [headers.join(","), ...body].join("\n");
 }
+
+export function sampleDatasetToCsv(rows: StudentRecord[]) {
+  const headers = ["student_id", ...featureSpecs.map((field) => field.id), "final_score", "academic_risk"];
+  const body = rows.map((row) => [
+    row.student_id,
+    ...featureSpecs.map((field) => row[field.id]),
+    row.final_score,
+    row.academic_risk,
+  ].join(","));
+  return [headers.join(","), ...body].join("\n");
+}

@@ -32,8 +32,6 @@
 @theme inline {
   --font-sans: "Avenir Next", Avenir, "Segoe UI", sans-serif;
   --font-display: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-  --font-sans: "Avenir Next", Avenir, "Segoe UI", sans-serif;
-  --font-display: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --color-text-soft: var(--text-soft);
   --color-green-soft: var(--green-soft);
   --color-blue-soft: var(--blue-soft);
@@ -142,7 +140,7 @@
   --accent: oklch(0.32 0.05 85);
   --accent-foreground: oklch(0.95 0.025 90);
   --destructive: oklch(0.67 0.17 26);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
+  --destructive-foreground: oklch(0.18 0.025 164);
   --border: oklch(0.36 0.03 163);
   --input: oklch(0.36 0.03 163);
   --ring: oklch(0.69 0.1 160);

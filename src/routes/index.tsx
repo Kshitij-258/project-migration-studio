@@ -12,7 +12,7 @@ import { Slider } from "@/components/ui/slider";
 import { supabase } from "@/integrations/supabase/client";
 import {
   actionableFeatures, demoCohort, estimateStudent, explainStudent, featureSpecs, initialStudent,
-  parseStudentCsv, predictionsToCsv, presets, recommendations,
+  parseStudentCsv, predictionsToCsv, presets, recommendations, sampleDatasetToCsv,
   type FeatureId, type Prediction, type Student, type StudentRecord,
 } from "@/lib/edu-track";
 import { deleteSavedPrediction, loadSavedPredictions, savePrediction, type SavedPrediction } from "@/lib/saved-predictions";
@@ -143,14 +143,6 @@ function EduTrackApp() {
     try { await deleteSavedPrediction(id); setSaved(await loadSavedPredictions()); setAuthMessage("Saved prediction removed."); }
     catch (error) { setAuthMessage(error instanceof Error ? error.message : "Could not delete the prediction."); }
   };
-  const sampleCsv = () => {
-    const rows = demoCohort.map((row) => {
-      const data = Object.fromEntries(featureSpecs.map((field) => [field.id, row[field.id]])) as Student;
-      return { student_id: row.student_id, student: data, prediction: { ...estimateStudent(data), predicted_score: row.final_score } };
-    });
-    return predictionsToCsv(rows);
-  };
-
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}>
       <div className="brand-lockup"><div className="brand-mark"><GraduationCap aria-hidden="true" /></div><div><strong>EduTrack</strong><span>STUDENT PROGRESS STUDIO</span></div><Button variant="ghost" size="icon" className="mobile-close" aria-label="Close menu" onClick={() => setMenuOpen(false)}><X /></Button></div>
@@ -165,7 +157,7 @@ function EduTrackApp() {
         <div className="topbar-right">{account ? <><span className="account-email">{account.email}</span><Button variant="outline" size="sm" onClick={handleSignOut}>Sign out</Button></> : <span className="demo-indicator"><span className="status-dot" />{authReady ? "SIGNED OUT" : "CONNECTING"}</span>}<div className="avatar-mark">{account?.email?.slice(0, 2).toUpperCase() ?? "ET"}</div></div>
       </header>
       <div className="page-content">
-        {view === "Overview" && <OverviewPage stats={cohortStats} factor={factor} setFactor={setFactor} samples={filteredSamples} search={sampleSearch} setSearch={setSampleSearch} onDownload={() => downloadFile("edutrack_synthetic_sample.csv", sampleCsv())} onPredict={() => navigate("Predict a student")} />}
+        {view === "Overview" && <OverviewPage stats={cohortStats} factor={factor} setFactor={setFactor} samples={filteredSamples} search={sampleSearch} setSearch={setSampleSearch} onDownload={() => downloadFile("edutrack_synthetic_sample.csv", sampleDatasetToCsv(demoCohort))} onPredict={() => navigate("Predict a student")} />}
         {view === "Predict a student" && <PredictPage studentId={studentId} setStudentId={setStudentId} student={student} onFeatureChange={changeFeature} preset={preset} onPreset={choosePreset} onPredict={runPrediction} result={latest} whatIf={whatIf} setWhatIf={setWhatIf} resultTab={resultTab} setResultTab={setResultTab} onSave={handleSavePrediction} busy={busy} />}
         {view === "Batch prediction" && <BatchPage rows={batchRows} issues={batchIssues} uploadName={uploadName} onUpload={onUpload} onDownload={() => downloadFile("edutrack_batch_predictions.csv", predictionsToCsv(batchRows))} />}
         {view === "Saved predictions" && <SavedPage rows={visibleSaved} filter={filter} setFilter={setFilter} account={account} authMode={authMode} setAuthMode={setAuthMode} email={authEmail} setEmail={setAuthEmail} password={authPassword} setPassword={setAuthPassword} authMessage={authMessage} onAuth={handleAuth} onDelete={handleDeletePrediction} busy={busy} />}
