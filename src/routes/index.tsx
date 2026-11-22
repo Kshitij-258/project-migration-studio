@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import {
   Activity, ArrowDownRight, ArrowUpRight, BookOpenCheck, ChartNoAxesCombined, ChevronDown,
   CircleAlert, ClipboardList, Download, FileUp, GraduationCap, Info, LayoutDashboard, LockKeyhole,
@@ -13,9 +14,11 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   actionableFeatures, demoCohort, estimateStudent, explainStudent, featureSpecs, initialStudent,
   parseStudentCsv, predictionsToCsv, presets, recommendations, sampleDatasetToCsv,
-  type FeatureId, type Prediction, type Student, type StudentRecord,
+  calculateAttendancePercentage, initialSubjects, profileToStudent, validateStudentProfile,
+  type FeatureId, type Prediction, type Student, type StudentProfile, type StudentRecord, type SubjectAssessment,
 } from "@/lib/edu-track";
 import { deleteSavedPrediction, loadSavedPredictions, savePrediction, type SavedPrediction } from "@/lib/saved-predictions";
+import { generateStudentGuidance } from "@/lib/student-guidance.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -32,7 +35,7 @@ export const Route = createFileRoute("/")({
 });
 
 type View = "Overview" | "Predict a student" | "Batch prediction" | "Saved predictions" | "Model notes" | "About";
-type AnalyzedRow = { student_id: string; student: Student; prediction: Prediction };
+type AnalyzedRow = { student_id: string; student: Student; prediction: Prediction; profile?: StudentProfile };
 const navItems: { label: View; icon: typeof LayoutDashboard }[] = [
   { label: "Overview", icon: LayoutDashboard }, { label: "Predict a student", icon: Target },
   { label: "Batch prediction", icon: FileUp }, { label: "Saved predictions", icon: ClipboardList },
@@ -60,6 +63,11 @@ function EduTrackApp() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [studentId, setStudentId] = useState("NEW-STUDENT");
   const [student, setStudent] = useState<Student>({ ...initialStudent });
+  const [attendanceAttended, setAttendanceAttended] = useState(80);
+  const [attendanceHeld, setAttendanceHeld] = useState(100);
+  const [subjects, setSubjects] = useState<SubjectAssessment[]>(() => initialSubjects(initialStudent));
+  const [nextSubjectNumber, setNextSubjectNumber] = useState(4);
+  const [profileErrors, setProfileErrors] = useState<string[]>([]);
   const [preset, setPreset] = useState("Custom entry");
   const [latest, setLatest] = useState<AnalyzedRow | null>(null);
   const [whatIf, setWhatIf] = useState<Partial<Student>>({});
@@ -80,6 +88,10 @@ function EduTrackApp() {
   const [authDisplayName, setAuthDisplayName] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiGuidance, setAiGuidance] = useState("");
+  const [aiGuidanceError, setAiGuidanceError] = useState("");
+  const [aiGuidanceLoading, setAiGuidanceLoading] = useState(false);
+  const requestStudentGuidance = useServerFn(generateStudentGuidance);
 
   useEffect(() => {
     let active = true;
@@ -116,16 +128,76 @@ function EduTrackApp() {
   const filteredSamples = useMemo(() => demoCohort.filter((row) => row.student_id.toLowerCase().includes(sampleSearch.trim().toLowerCase())).slice(0, 8), [sampleSearch]);
   const visibleSaved = saved.filter((row) => filter === "" || row.student_id.toLowerCase().includes(filter.toLowerCase()));
   const navigate = (destination: View) => { setView(destination); setMenuOpen(false); };
+  const clearAssessmentResult = () => { setLatest(null); setAiGuidance(""); setAiGuidanceError(""); setProfileErrors([]); };
+  const currentProfile = (): StudentProfile => ({
+    attendanceAttended,
+    attendanceHeld,
+    study_hours: student.study_hours,
+    assignment_completion: student.assignment_completion,
+    previous_score: student.previous_score,
+    internal_marks: student.internal_marks,
+    absences: student.absences,
+    subjects,
+  });
   const runPrediction = () => {
+    const profile = currentProfile();
+    const errors = validateStudentProfile(profile);
+    if (errors.length) { setProfileErrors(errors); return; }
+    setProfileErrors([]); setAiGuidance(""); setAiGuidanceError("");
     const id = studentId.trim() || "UNKNOWN"; setStudentId(id);
-    setLatest({ student_id: id, student: { ...student }, prediction: estimateStudent(student) });
+    const normalizedStudent = profileToStudent(profile);
+    setLatest({ student_id: id, student: normalizedStudent, prediction: estimateStudent(normalizedStudent), profile });
     setWhatIf({}); setResultTab("Signals");
   };
   const changeFeature = (field: FeatureId, values: number[]) => {
     const value = values[0]; if (value === undefined) return;
-    setStudent((current) => ({ ...current, [field]: value })); setPreset("Custom entry");
+    setStudent((current) => ({ ...current, [field]: value })); setPreset("Custom entry"); clearAssessmentResult();
   };
-  const choosePreset = (name: string) => { setPreset(name); const next = presets[name]; if (next) setStudent({ ...next }); };
+  const changeAttendance = (field: "attendanceAttended" | "attendanceHeld", value: number) => {
+    if (field === "attendanceAttended") setAttendanceAttended(value); else setAttendanceHeld(value);
+    setPreset("Custom entry"); clearAssessmentResult();
+  };
+  const changeSubject = (id: string, changes: Partial<Omit<SubjectAssessment, "id">>) => {
+    setSubjects((current) => current.map((subject) => subject.id === id ? { ...subject, ...changes } : subject));
+    setPreset("Custom entry"); clearAssessmentResult();
+  };
+  const addSubject = () => {
+    setSubjects((current) => [...current, { id: `subject-${nextSubjectNumber}`, name: `Subject ${nextSubjectNumber - 3}`, marks: 0, maxMarks: 100 }]);
+    setNextSubjectNumber((current) => current + 1); setPreset("Custom entry"); clearAssessmentResult();
+  };
+  const removeSubject = (id: string) => {
+    if (subjects.length <= 1) return;
+    setSubjects((current) => current.filter((subject) => subject.id !== id)); setPreset("Custom entry"); clearAssessmentResult();
+  };
+  const choosePreset = (name: string) => {
+    setPreset(name); const next = presets[name];
+    if (next) {
+      setStudent({ ...next }); setAttendanceAttended(next.attendance); setAttendanceHeld(100);
+      setSubjects(initialSubjects(next)); clearAssessmentResult();
+    }
+  };
+  const handleGenerateGuidance = async () => {
+    if (!account) { setAiGuidanceError("Sign in before requesting AI guidance for student information."); return; }
+    if (!latest?.profile) { setAiGuidanceError("Estimate the student profile again before requesting guidance."); return; }
+    setAiGuidanceLoading(true); setAiGuidanceError("");
+    try {
+      const profile = latest.profile;
+      const response = await requestStudentGuidance({
+        attendanceAttended: profile.attendanceAttended,
+        attendanceHeld: profile.attendanceHeld,
+        study_hours: profile.study_hours,
+        assignment_completion: profile.assignment_completion,
+        previous_score: profile.previous_score,
+        internal_marks: profile.internal_marks,
+        absences: profile.absences,
+        subjects: profile.subjects.map(({ name, marks, maxMarks }) => ({ name, marks, maxMarks })),
+      });
+      if (response.ok) setAiGuidance(response.text);
+      else setAiGuidanceError(response.message);
+    } catch {
+      setAiGuidanceError("AI guidance could not be reached. Your profile is unchanged—please sign in again or try later.");
+    } finally { setAiGuidanceLoading(false); }
+  };
   const onUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (!file) return;
     setUploadName(file.name); const result = parseStudentCsv(await file.text()); setBatchIssues(result.errors);
@@ -189,7 +261,7 @@ function EduTrackApp() {
       </header>
       <div className="page-content">
         {view === "Overview" && <OverviewPage stats={cohortStats} factor={factor} setFactor={setFactor} samples={filteredSamples} search={sampleSearch} setSearch={setSampleSearch} onDownload={() => downloadFile("edutrack_synthetic_sample.csv", sampleDatasetToCsv(demoCohort))} onPredict={() => navigate("Predict a student")} />}
-        {view === "Predict a student" && <PredictPage studentId={studentId} setStudentId={setStudentId} student={student} onFeatureChange={changeFeature} preset={preset} onPreset={choosePreset} onPredict={runPrediction} result={latest} whatIf={whatIf} setWhatIf={setWhatIf} resultTab={resultTab} setResultTab={setResultTab} onSave={handleSavePrediction} busy={busy} />}
+        {view === "Predict a student" && <PredictPage studentId={studentId} setStudentId={setStudentId} student={student} onFeatureChange={changeFeature} attendanceAttended={attendanceAttended} attendanceHeld={attendanceHeld} onAttendanceChange={changeAttendance} subjects={subjects} onSubjectChange={changeSubject} onAddSubject={addSubject} onRemoveSubject={removeSubject} profileErrors={profileErrors} preset={preset} onPreset={choosePreset} onPredict={runPrediction} result={latest} whatIf={whatIf} setWhatIf={setWhatIf} resultTab={resultTab} setResultTab={setResultTab} onSave={handleSavePrediction} busy={busy} canRequestGuidance={Boolean(account)} aiGuidance={aiGuidance} aiGuidanceError={aiGuidanceError} aiGuidanceLoading={aiGuidanceLoading} onGenerateGuidance={handleGenerateGuidance} />}
         {view === "Batch prediction" && <BatchPage rows={batchRows} issues={batchIssues} uploadName={uploadName} onUpload={onUpload} onDownload={() => downloadFile("edutrack_batch_predictions.csv", predictionsToCsv(batchRows))} />}
         {view === "Saved predictions" && <SavedPage rows={visibleSaved} filter={filter} setFilter={setFilter} account={account} profileDisplayName={profileDisplayName} setProfileDisplayName={setProfileDisplayName} onUpdateProfile={handleUpdateProfile} authMode={authMode} setAuthMode={setAuthMode} email={authEmail} setEmail={setAuthEmail} password={authPassword} setPassword={setAuthPassword} displayName={authDisplayName} setDisplayName={setAuthDisplayName} authMessage={authMessage} onAuth={handleAuth} onDelete={handleDeletePrediction} busy={busy} />}
         {view === "Model notes" && <ModelPage />}{view === "About" && <AboutPage />}
@@ -228,13 +300,53 @@ function StudentTable({ rows }: { rows: { id: string; score: number; attendance:
 function RangeControl({ field, value, onChange, compact = false }: { field: (typeof featureSpecs)[number]; value: number; onChange: (values: number[]) => void; compact?: boolean }) {
   return <div className={`range-control ${compact ? "range-compact" : ""}`}><div className="range-label"><label htmlFor={`field-${field.id}`}>{field.label}</label><span><strong>{value}</strong><small>{field.unit}</small></span></div><Slider id={`field-${field.id}`} aria-label={field.label} min={field.min} max={field.max} step={field.step} value={[value]} onValueChange={onChange} /><div className="range-minmax"><span>{field.min}</span><span>{field.max}</span></div></div>;
 }
-function PredictPage({ studentId, setStudentId, student, onFeatureChange, preset, onPreset, onPredict, result, whatIf, setWhatIf, resultTab, setResultTab, onSave, busy }: { studentId: string; setStudentId: (value: string) => void; student: Student; onFeatureChange: (field: FeatureId, values: number[]) => void; preset: string; onPreset: (value: string) => void; onPredict: () => void; result: AnalyzedRow | null; whatIf: Partial<Student>; setWhatIf: (value: Partial<Student>) => void; resultTab: string; setResultTab: (value: string) => void; onSave: () => void; busy: boolean }) {
+type PredictPageProps = {
+  studentId: string;
+  setStudentId: (value: string) => void;
+  student: Student;
+  onFeatureChange: (field: FeatureId, values: number[]) => void;
+  attendanceAttended: number;
+  attendanceHeld: number;
+  onAttendanceChange: (field: "attendanceAttended" | "attendanceHeld", value: number) => void;
+  subjects: SubjectAssessment[];
+  onSubjectChange: (id: string, changes: Partial<Omit<SubjectAssessment, "id">>) => void;
+  onAddSubject: () => void;
+  onRemoveSubject: (id: string) => void;
+  profileErrors: string[];
+  preset: string;
+  onPreset: (value: string) => void;
+  onPredict: () => void;
+  result: AnalyzedRow | null;
+  whatIf: Partial<Student>;
+  setWhatIf: (value: Partial<Student>) => void;
+  resultTab: string;
+  setResultTab: (value: string) => void;
+  onSave: () => void;
+  busy: boolean;
+  canRequestGuidance: boolean;
+  aiGuidance: string;
+  aiGuidanceError: string;
+  aiGuidanceLoading: boolean;
+  onGenerateGuidance: () => void;
+};
+function PredictPage({ studentId, setStudentId, student, onFeatureChange, attendanceAttended, attendanceHeld, onAttendanceChange, subjects, onSubjectChange, onAddSubject, onRemoveSubject, profileErrors, preset, onPreset, onPredict, result, whatIf, setWhatIf, resultTab, setResultTab, onSave, busy, canRequestGuidance, aiGuidance, aiGuidanceError, aiGuidanceLoading, onGenerateGuidance }: PredictPageProps) {
   const predicted = result?.prediction, adjusted = result ? { ...result.student, ...whatIf } : student, simulated = estimateStudent(adjusted);
+  const attendancePercent = calculateAttendancePercentage(attendanceAttended, attendanceHeld);
   const issue = result && result.student.attendance + result.student.absences * 5 < 80 ? "Attendance and absence values may be worth double-checking." : "";
   return <><PageHeading kicker="INDIVIDUAL REVIEW" title="Predict a student's progress." description="Use a pseudonym and current signals to prepare a supportive teacher conversation." /><div className="notice-band notice-amber"><Info /><span><strong>Estimate only.</strong> The original trained model was not included; this preview uses the source project's transparent scoring formula and generated sample data.</span></div>
-    <div className="predict-layout"><section className="form-panel"><div className="panel-heading"><div><span className="panel-kicker">STUDENT INPUTS</span><h2>Progress signals</h2><p>Use scores and observations available for this term.</p></div><span className="step-number">01</span></div><label className="field-label" htmlFor="student-id">Student ID <span>Use a pseudonym</span></label><Input id="student-id" value={studentId} onChange={(event) => setStudentId(event.target.value)} placeholder="e.g. STU-014" /><label className="field-label preset-label" htmlFor="preset">Start from an example</label><div className="select-wrap preset-select"><select id="preset" value={preset} onChange={(event) => onPreset(event.target.value)}>{Object.keys(presets).map((item) => <option key={item}>{item}</option>)}</select><ChevronDown /></div><div className="input-group-title"><span>Learning habits</span><i /></div><div className="range-list">{featureSpecs.slice(0, 6).map((field) => <RangeControl key={field.id} field={field} value={student[field.id]} onChange={(values) => onFeatureChange(field.id, values)} />)}</div><div className="input-group-title"><span>Subject marks</span><i /></div><div className="range-list subject-ranges">{featureSpecs.slice(6).map((field) => <RangeControl key={field.id} field={field} value={student[field.id]} onChange={(values) => onFeatureChange(field.id, values)} compact />)}</div><div className="form-actions"><Button size="lg" onClick={onPredict}><Target /> Estimate performance</Button><span>Use pseudonyms, not real student names.</span></div></section>
-      <div className="result-column">{!result || !predicted ? <section className="empty-result"><div className="empty-result-mark"><Activity /></div><span className="panel-kicker">READY WHEN YOU ARE</span><h2>One student at a time.</h2><p>Enter the current signals and run an estimate. Results include a range, risk tier, visible signals, and suggested next steps.</p><div className="empty-result-rule"><span /><i /><span /></div><div className="empty-result-note"><ShieldCheck /><span>Use this as a starting point for support, never as a decision about a student's future.</span></div></section> : <><section className="result-summary"><div className="result-title"><div><span className="panel-kicker">RESULT FOR</span><h2>{result.student_id}</h2></div><span className={`risk-tag ${riskClass[predicted.risk_level]}`}><i />{predicted.risk_level}</span></div>{issue && <p className="result-warning"><Info />{issue}</p>}<div className="score-hero"><div><span>ESTIMATED FINAL SCORE</span><strong>{predicted.predicted_score.toFixed(1)}<small>/100</small></strong><p>Likely range <b>{predicted.score_low.toFixed(0)}–{predicted.score_high.toFixed(0)}</b></p></div><ScoreDial probability={predicted.risk_probability} /></div><div className="score-facts"><div><span>COHORT STANDING</span><strong>Top {Math.max(1, 100 - predicted.percentile).toFixed(0)}%</strong></div><div><span>RISK PROBABILITY</span><strong>{(predicted.risk_probability * 100).toFixed(1)}%</strong></div><div><span>SCORE RANGE</span><strong>{predicted.score_low.toFixed(0)} – {predicted.score_high.toFixed(0)}</strong></div></div></section><section className="result-tabs-panel"><div className="result-tabs" role="tablist" aria-label="Prediction details">{["Signals", "Suggestions", "What if?"].map((tab) => <Button key={tab} role="tab" aria-selected={resultTab === tab} variant="ghost" className={resultTab === tab ? "tab-active" : ""} onClick={() => setResultTab(tab)}>{tab}</Button>)}</div>{resultTab === "Signals" && <SignalPanel student={result.student} />}{resultTab === "Suggestions" && <SuggestionPanel student={result.student} prediction={predicted} />}{resultTab === "What if?" && <WhatIfPanel adjusted={adjusted} prediction={predicted} simulated={simulated} onChange={(field, values) => { const value = values[0]; if (value !== undefined) setWhatIf({ ...whatIf, [field]: value }); }} />}<div className="save-row"><span><LockKeyhole /> Saved records are private to your account.</span><Button variant="outline" disabled={busy} onClick={onSave}><Save />{busy ? "Saving…" : "Save prediction"}</Button></div></section></>}</div></div>
+    <div className="predict-layout"><section className="form-panel"><div className="panel-heading"><div><span className="panel-kicker">STUDENT INPUTS</span><h2>Progress signals</h2><p>Use scores and observations available for this term.</p></div><span className="step-number">01</span></div><label className="field-label" htmlFor="student-id">Student ID <span>Use a pseudonym</span></label><Input id="student-id" value={studentId} onChange={(event) => setStudentId(event.target.value)} placeholder="e.g. STU-014" /><label className="field-label preset-label" htmlFor="preset">Start from an example</label><div className="select-wrap preset-select"><select id="preset" value={preset} onChange={(event) => onPreset(event.target.value)}>{Object.keys(presets).map((item) => <option key={item}>{item}</option>)}</select><ChevronDown /></div>
+      <div className="input-group-title"><span>Attendance</span><i /></div><div className="attendance-input-grid"><div><label className="field-label" htmlFor="sessions-attended">Sessions attended</label><Input id="sessions-attended" type="number" min={0} max={10000} step={1} value={attendanceAttended} onChange={(event) => onAttendanceChange("attendanceAttended", Number(event.target.value))} /></div><div><label className="field-label" htmlFor="sessions-held">Sessions held</label><Input id="sessions-held" type="number" min={1} max={10000} step={1} value={attendanceHeld} onChange={(event) => onAttendanceChange("attendanceHeld", Number(event.target.value))} /></div><p>Calculated attendance <strong>{attendancePercent.toFixed(1)}%</strong></p></div>
+      <div className="input-group-title"><span>Learning habits</span><i /></div><div className="range-list">{featureSpecs.slice(1, 6).map((field) => <RangeControl key={field.id} field={field} value={student[field.id]} onChange={(values) => onFeatureChange(field.id, values)} />)}</div>
+      <div className="input-group-title subject-section-title"><span>Subject marks</span><Button variant="outline" size="sm" disabled={subjects.length >= 20} onClick={onAddSubject} aria-label="Add subject"><Plus /> Add subject</Button></div>
+      <div className="subject-editor-list">{subjects.map((subject) => <section className="subject-editor-row" key={subject.id}><div className="subject-name-field"><label className="field-label" htmlFor={`subject-name-${subject.id}`}>Subject</label><Input id={`subject-name-${subject.id}`} maxLength={60} value={subject.name} onChange={(event) => onSubjectChange(subject.id, { name: event.target.value })} /></div><div><label className="field-label" htmlFor={`subject-mark-${subject.id}`}>Marks</label><Input id={`subject-mark-${subject.id}`} type="number" min={0} max={100000} step={0.5} value={subject.marks} onChange={(event) => onSubjectChange(subject.id, { marks: Number(event.target.value) })} /></div><div><label className="field-label" htmlFor={`subject-max-${subject.id}`}>Maximum</label><Input id={`subject-max-${subject.id}`} type="number" min={1} max={100000} step={0.5} value={subject.maxMarks} onChange={(event) => onSubjectChange(subject.id, { maxMarks: Number(event.target.value) })} /></div><Button variant="ghost" size="icon" className="remove-subject" aria-label={`Remove ${subject.name || "subject"}`} title="Remove subject" disabled={subjects.length <= 1} onClick={() => onRemoveSubject(subject.id)}><Trash2 /></Button></section>)}</div>
+      {profileErrors.map((error) => <div className="inline-alert profile-alert" role="alert" key={error}><Info />{error}</div>)}
+      <div className="form-actions"><Button size="lg" onClick={onPredict}><Target /> Estimate performance</Button><span>Use pseudonyms, not real student names.</span></div></section>
+      <div className="result-column">{!result || !predicted ? <section className="empty-result"><div className="empty-result-mark"><Activity /></div><span className="panel-kicker">READY WHEN YOU ARE</span><h2>One student at a time.</h2><p>Enter the current signals and run an estimate. Results include a range, risk tier, visible signals, and suggested next steps.</p><div className="empty-result-rule"><span /><i /><span /></div><div className="empty-result-note"><ShieldCheck /><span>Use this as a starting point for support, never as a decision about a student's future.</span></div></section> : <><section className="result-summary"><div className="result-title"><div><span className="panel-kicker">RESULT FOR</span><h2>{result.student_id}</h2></div><span className={`risk-tag ${riskClass[predicted.risk_level]}`}><i />{predicted.risk_level}</span></div>{issue && <p className="result-warning"><Info />{issue}</p>}<div className="score-hero"><div><span>ESTIMATED FINAL SCORE</span><strong>{predicted.predicted_score.toFixed(1)}<small>/100</small></strong><p>Likely range <b>{predicted.score_low.toFixed(0)}–{predicted.score_high.toFixed(0)}</b></p></div><ScoreDial probability={predicted.risk_probability} /></div><div className="score-facts"><div><span>COHORT STANDING</span><strong>Top {Math.max(1, 100 - predicted.percentile).toFixed(0)}%</strong></div><div><span>RISK PROBABILITY</span><strong>{(predicted.risk_probability * 100).toFixed(1)}%</strong></div><div><span>SCORE RANGE</span><strong>{predicted.score_low.toFixed(0)} – {predicted.score_high.toFixed(0)}</strong></div></div></section><section className="result-tabs-panel"><div className="result-tabs" role="tablist" aria-label="Prediction details">{["Signals", "Suggestions", "AI guidance", "What if?"].map((tab) => <Button key={tab} role="tab" aria-selected={resultTab === tab} variant="ghost" className={resultTab === tab ? "tab-active" : ""} onClick={() => setResultTab(tab)}>{tab}</Button>)}</div>{resultTab === "Signals" && <SignalPanel student={result.student} />}{resultTab === "Suggestions" && <SuggestionPanel student={result.student} prediction={predicted} />}{resultTab === "AI guidance" && <AIGuidancePanel canRequest={canRequestGuidance} text={aiGuidance} error={aiGuidanceError} loading={aiGuidanceLoading} onGenerate={onGenerateGuidance} />}{resultTab === "What if?" && <WhatIfPanel adjusted={adjusted} prediction={predicted} simulated={simulated} onChange={(field, values) => { const value = values[0]; if (value !== undefined) setWhatIf({ ...whatIf, [field]: value }); }} />}<div className="save-row"><span><LockKeyhole /> Saved records are private to your account.</span><Button variant="outline" disabled={busy} onClick={onSave}><Save />{busy ? "Saving…" : "Save prediction"}</Button></div></section></>}</div></div>
   </>;
+}
+
+function AIGuidancePanel({ canRequest, text, error, loading, onGenerate }: { canRequest: boolean; text: string; error: string; loading: boolean; onGenerate: () => void }) {
+  return <div className="detail-panel ai-guidance-panel"><div className="detail-title"><div><span className="panel-kicker">PERSONALIZED SUPPORT</span><h3>AI recommendation</h3></div><Sparkles /></div><div className="ai-privacy-note"><ShieldCheck /><p>Only attendance, learning signals, subject names, and marks are sent for guidance. Student ID and name are excluded, and this response is not saved.</p></div>{text && <section className="ai-guidance-output" aria-live="polite"><h4>Recommendation and key factors</h4><p>{text}</p></section>}{error && <div className="inline-alert" role="alert"><Info />{error}</div>}{!canRequest && <p className="fine-print">Sign in from Saved predictions to request private AI guidance.</p>}<Button className="ai-guidance-button" disabled={loading || !canRequest} onClick={onGenerate}><Sparkles />{loading ? "Preparing guidance…" : text ? "Generate again" : "Generate AI guidance"}</Button><p className="fine-print">AI suggestions are starting points for teacher judgment, not diagnoses or decisions.</p></div>;
 }
 function ScoreDial({ probability }: { probability: number }) {
   const circumference = 2 * Math.PI * 41;

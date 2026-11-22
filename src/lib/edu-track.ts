@@ -32,6 +32,58 @@ export const presets: Record<string, Student> = {
 };
 export interface StudentRecord extends Student { student_id: string; final_score: number; academic_risk: number; }
 export interface Prediction { predicted_score: number; score_low: number; score_high: number; risk_probability: number; risk_level: RiskLevel; percentile: number; }
+export interface SubjectAssessment { id: string; name: string; marks: number; maxMarks: number; }
+export interface StudentProfile {
+  attendanceAttended: number;
+  attendanceHeld: number;
+  study_hours: number;
+  assignment_completion: number;
+  previous_score: number;
+  internal_marks: number;
+  absences: number;
+  subjects: SubjectAssessment[];
+}
+export const initialSubjects = (student: Student): SubjectAssessment[] => [
+  { id: "subject-1", name: "Mathematics", marks: student.mathematics, maxMarks: 100 },
+  { id: "subject-2", name: "Programming", marks: student.programming, maxMarks: 100 },
+  { id: "subject-3", name: "Electronics", marks: student.electronics, maxMarks: 100 },
+];
+export function calculateAttendancePercentage(attended: number, held: number) {
+  return held > 0 ? (attended / held) * 100 : 0;
+}
+export function validateStudentProfile(profile: StudentProfile): string[] {
+  const errors: string[] = [];
+  if (!Number.isInteger(profile.attendanceAttended) || profile.attendanceAttended < 0) errors.push("Sessions attended must be a whole number of zero or more.");
+  if (!Number.isInteger(profile.attendanceHeld) || profile.attendanceHeld < 1) errors.push("Sessions held must be at least one.");
+  if (profile.attendanceAttended > profile.attendanceHeld) errors.push("Sessions attended cannot exceed sessions held.");
+  if (!Number.isFinite(profile.study_hours) || profile.study_hours < 0 || profile.study_hours > 10) errors.push("Study hours must be between 0 and 10.");
+  if (!Number.isFinite(profile.assignment_completion) || profile.assignment_completion < 0 || profile.assignment_completion > 100) errors.push("Assignment completion must be between 0 and 100%.");
+  if (!Number.isFinite(profile.previous_score) || profile.previous_score < 0 || profile.previous_score > 100) errors.push("Previous score must be between 0 and 100.");
+  if (!Number.isFinite(profile.internal_marks) || profile.internal_marks < 0 || profile.internal_marks > 50) errors.push("Internal marks must be between 0 and 50.");
+  if (!Number.isInteger(profile.absences) || profile.absences < 0 || profile.absences > 60) errors.push("Absences must be between 0 and 60 days.");
+  if (profile.subjects.length < 1 || profile.subjects.length > 20) errors.push("Add between 1 and 20 subjects.");
+  for (const subject of profile.subjects) {
+    if (!subject.name.trim() || subject.name.trim().length > 60) errors.push("Each subject needs a name of 1–60 characters.");
+    if (!Number.isFinite(subject.maxMarks) || subject.maxMarks <= 0 || subject.maxMarks > 100000) errors.push("Each subject maximum must be greater than 0 and no more than 100,000.");
+    if (!Number.isFinite(subject.marks) || subject.marks < 0 || subject.marks > subject.maxMarks) errors.push("Subject marks must be from 0 through that subject's maximum.");
+  }
+  return [...new Set(errors)];
+}
+export function profileToStudent(profile: StudentProfile): Student {
+  const subjectPercentages = profile.subjects.map((subject) => subject.maxMarks > 0 ? (subject.marks / subject.maxMarks) * 100 : 0);
+  const subjectAverage = subjectPercentages.length ? subjectPercentages.reduce((sum, value) => sum + value, 0) / subjectPercentages.length : 0;
+  return {
+    attendance: calculateAttendancePercentage(profile.attendanceAttended, profile.attendanceHeld),
+    study_hours: profile.study_hours,
+    assignment_completion: profile.assignment_completion,
+    previous_score: profile.previous_score,
+    internal_marks: profile.internal_marks,
+    absences: profile.absences,
+    mathematics: subjectAverage,
+    programming: subjectAverage,
+    electronics: subjectAverage,
+  };
+}
 export function riskLevel(probability: number): RiskLevel {
   if (probability >= 0.5) return "Needs support";
   if (probability >= 0.25) return "Keep an eye on";

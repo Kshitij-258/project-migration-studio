@@ -32,3 +32,5 @@ use the editor.
 - Keep all student-record access scoped by authenticated user identity in database row policies, because predictions may contain sensitive educational information.
 - Preserve the source app’s sidebar-section navigation as views within the single root page, because the source shipped six screens in one Streamlit workspace.
 - Store teacher display names as non-privileged authentication user metadata, keeping the account label separate from permissions and avoiding unnecessary profile tables.
+- Keep AI Gateway calls inside authenticated TanStack server functions, and send only the de-identified student inputs needed for guidance.
+- Keep editable assessment profiles in client-safe domain helpers and normalize them at the scoring boundary, preserving legacy demo/CSV schemas without persisting new profile fields.
