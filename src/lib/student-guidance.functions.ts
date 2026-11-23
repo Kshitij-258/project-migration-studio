@@ -75,7 +75,14 @@ export const generateStudentGuidance = createServerFn({ method: "POST" })
         ? item.content.filter((content) => content.type === "output_text").map((content) => content.text)
         : []).join("\n").trim();
       if (!text) return { ok: false as const, message: "The AI did not return usable guidance. Please try again." };
-      return { ok: true as const, text: text.slice(0, 6000) };
+      const readableText = text
+        .replace(/^#{1,6}\s*/gm, "")
+        .replace(/\*\*/g, "")
+        .replace(/`/g, "")
+        .replace(/^\s*[-*]\s+/gm, "• ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      return { ok: true as const, text: readableText.slice(0, 6000) };
     } catch (error) {
       if (error instanceof GatewayError) {
         console.error("[AI Gateway] Student guidance failed", {

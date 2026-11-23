@@ -1,6 +1,6 @@
 # EduTrack migration
 
-- [ ] Add editable student subjects, score maxima, attended/held attendance, and personalized AI recommendations with factor explanations.
+- [x] Add editable student subjects, score maxima, attended/held attendance, and personalized AI recommendations with factor explanations.
 - [x] Inspect the archive and record source capabilities.
 - [x] Recreate the six app sections and student workflows.
 - [x] Add private saved-prediction storage in Lovable Cloud.

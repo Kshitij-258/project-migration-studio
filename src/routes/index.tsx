@@ -183,14 +183,16 @@ function EduTrackApp() {
     try {
       const profile = latest.profile;
       const response = await requestStudentGuidance({
-        attendanceAttended: profile.attendanceAttended,
-        attendanceHeld: profile.attendanceHeld,
-        study_hours: profile.study_hours,
-        assignment_completion: profile.assignment_completion,
-        previous_score: profile.previous_score,
-        internal_marks: profile.internal_marks,
-        absences: profile.absences,
-        subjects: profile.subjects.map(({ name, marks, maxMarks }) => ({ name, marks, maxMarks })),
+        data: {
+          attendanceAttended: profile.attendanceAttended,
+          attendanceHeld: profile.attendanceHeld,
+          study_hours: profile.study_hours,
+          assignment_completion: profile.assignment_completion,
+          previous_score: profile.previous_score,
+          internal_marks: profile.internal_marks,
+          absences: profile.absences,
+          subjects: profile.subjects.map(({ name, marks, maxMarks }) => ({ name, marks, maxMarks })),
+        },
       });
       if (response.ok) setAiGuidance(response.text);
       else setAiGuidanceError(response.message);
