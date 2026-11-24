@@ -37,4 +37,8 @@ describe("EduTrack model rules", () => {
     expect(errors).toContain("Sessions attended cannot exceed sessions held.");
     expect(errors).toContain("Subject marks must be from 0 through that subject's maximum.");
   });
+  it("rejects attendance counts beyond the supported session range", () => {
+    const profile: StudentProfile = { attendanceAttended: 10001, attendanceHeld: 10001, study_hours: 3, assignment_completion: 75, previous_score: 60, internal_marks: 30, absences: 4, subjects: [{ id: "1", name: "Algebra", marks: 30, maxMarks: 40 }] };
+    expect(validateStudentProfile(profile)).toContain("Sessions attended must be a whole number from 0 to 10,000.");
+  });
 });

@@ -53,8 +53,8 @@ export function calculateAttendancePercentage(attended: number, held: number) {
 }
 export function validateStudentProfile(profile: StudentProfile): string[] {
   const errors: string[] = [];
-  if (!Number.isInteger(profile.attendanceAttended) || profile.attendanceAttended < 0) errors.push("Sessions attended must be a whole number of zero or more.");
-  if (!Number.isInteger(profile.attendanceHeld) || profile.attendanceHeld < 1) errors.push("Sessions held must be at least one.");
+  if (!Number.isInteger(profile.attendanceAttended) || profile.attendanceAttended < 0 || profile.attendanceAttended > 10000) errors.push("Sessions attended must be a whole number from 0 to 10,000.");
+  if (!Number.isInteger(profile.attendanceHeld) || profile.attendanceHeld < 1 || profile.attendanceHeld > 10000) errors.push("Sessions held must be from 1 to 10,000.");
   if (profile.attendanceAttended > profile.attendanceHeld) errors.push("Sessions attended cannot exceed sessions held.");
   if (!Number.isFinite(profile.study_hours) || profile.study_hours < 0 || profile.study_hours > 10) errors.push("Study hours must be between 0 and 10.");
   if (!Number.isFinite(profile.assignment_completion) || profile.assignment_completion < 0 || profile.assignment_completion > 100) errors.push("Assignment completion must be between 0 and 100%.");
